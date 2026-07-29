@@ -1,0 +1,10 @@
+DropHound includes or is distributed with Cyberdrop-DL and its Python
+dependencies. Cyberdrop-DL is licensed under GPL-3.0-only.
+
+Project: Cyberdrop-DL
+Source: https://github.com/Cyberdrop-DL/cyberdrop-dl
+Pinned version: 10.3.0
+
+The Windows build process downloads dependencies from the Python Package Index.
+Their licenses and metadata remain available in the packaged Python
+distribution and at https://pypi.org/.
