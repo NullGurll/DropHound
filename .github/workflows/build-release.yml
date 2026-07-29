@@ -14,8 +14,8 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -26,13 +26,14 @@ jobs:
         run: |
           Set-ExecutionPolicy -Scope Process Bypass
           .\build.ps1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: DropHound-Windows
           path: installer-output/DropHound-Setup-*.exe
 
   macos:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - runner: macos-15
@@ -41,16 +42,16 @@ jobs:
             arch: x86_64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
       - name: Build and test
         env:
           PACKAGE_ARCH: ${{ matrix.arch }}
-        run: ./build_macos.sh
-      - uses: actions/upload-artifact@v4
+        run: bash ./build_macos.sh
+      - uses: actions/upload-artifact@v6
         with:
           name: DropHound-macOS-${{ matrix.arch }}
           path: release/*.dmg
@@ -58,16 +59,16 @@ jobs:
   linux:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
       - name: Install desktop build tools
         run: sudo apt-get update && sudo apt-get install -y python3-tk
       - name: Build and test
-        run: ./build_linux.sh
-      - uses: actions/upload-artifact@v4
+        run: bash ./build_linux.sh
+      - uses: actions/upload-artifact@v6
         with:
           name: DropHound-Linux
           path: |
@@ -81,7 +82,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: artifacts
           merge-multiple: true
@@ -90,8 +91,13 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >
-          gh release create "${GITHUB_REF_NAME}" artifacts/*
-          --repo "${GITHUB_REPOSITORY}"
-          --generate-notes
-          --verify-tag
+        run: |
+          if ! gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release create "${GITHUB_REF_NAME}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "DropHound ${GITHUB_REF_NAME#v}" \
+              --generate-notes
+          fi
+          gh release upload "${GITHUB_REF_NAME}" artifacts/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --clobber
