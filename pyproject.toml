@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "drophound"
+version = "0.6.0"
+description = "A modern cross-platform bulk download manager powered by Cyberdrop-DL"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "GPL-3.0-only"
+dependencies = [
+    "customtkinter==5.2.2",
+    "pillow==11.3.0",
+    "psutil==7.2.2",
+    "cyberdrop-dl-patched==10.3.0",
+]
+
+[project.gui-scripts]
+drophound = "cyberdrop_desk.app:main"
+
+[tool.setuptools.packages.find]
+include = ["cyberdrop_desk*"]

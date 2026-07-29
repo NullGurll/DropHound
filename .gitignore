@@ -1,0 +1,16 @@
+.DS_Store
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build*/
+dist*/
+release/
+installer-output/
+work/
+*.log
+engine-version*.txt
+*-preview.png
+!docs/drophound-preview.png
+assets/*chroma*
+assets/*-v2.png
