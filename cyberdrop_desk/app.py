@@ -48,6 +48,7 @@ ACCENT_HOVER = "#2563EB"
 SUCCESS = "#22C55E"
 DANGER = "#EF4444"
 DISK = "#34D399"
+URLS_EXAMPLE = "Paste one link per line, for example:\nhttps://example.com/album-one\nhttps://example.com/album-two"
 
 
 def bundled_asset(name: str) -> Path:
@@ -166,6 +167,7 @@ class DropHound(ctk.CTk):
         self.peak_speed = 0.0
         self.file_progress_total = 0
         self.supported_sites_loaded = False
+        self.urls_example_active = False
 
         self._build_shell()
         self._build_download_page()
@@ -309,7 +311,9 @@ class DropHound(ctk.CTk):
             font=ctk.CTkFont(size=13),
         )
         self.urls_text.grid(row=1, column=0, sticky="ew", padx=18)
-        self.urls_text.insert("1.0", "")
+        self.urls_text.bind("<FocusIn>", self._clear_urls_example)
+        self.urls_text.bind("<FocusOut>", self._restore_urls_example)
+        self._show_urls_example()
 
         destination = ctk.CTkFrame(input_card, fg_color="transparent")
         destination.grid(row=2, column=0, sticky="ew", padx=18, pady=14)
@@ -483,7 +487,7 @@ class DropHound(ctk.CTk):
             fg_color="transparent",
             hover_color=SURFACE_2,
             text_color=MUTED,
-            command=lambda: self.urls_text.delete("1.0", "end"),
+            command=self._clear_urls,
         ).grid(row=0, column=4)
 
     def _metric(self, parent: ctk.CTkFrame, label: str, value: str, color: str) -> ctk.CTkLabel:
@@ -862,7 +866,8 @@ class DropHound(ctk.CTk):
 
     def _start_download(self) -> None:
         try:
-            urls = normalize_urls(self.urls_text.get("1.0", "end"))
+            entered_text = "" if self.urls_example_active else self.urls_text.get("1.0", "end")
+            urls = normalize_urls(entered_text)
             if not urls:
                 raise ValueError("Paste at least one link to download.")
         except ValueError as error:
@@ -876,6 +881,26 @@ class DropHound(ctk.CTk):
             messagebox.showerror("Downloader missing", str(error), parent=self)
             return
         self._launch(command, len(urls), "Starting download…")
+
+    def _show_urls_example(self) -> None:
+        self.urls_text.delete("1.0", "end")
+        self.urls_text.insert("1.0", URLS_EXAMPLE)
+        self.urls_text.configure(text_color=MUTED)
+        self.urls_example_active = True
+
+    def _clear_urls_example(self, _event: object | None = None) -> None:
+        if not self.urls_example_active:
+            return
+        self.urls_text.delete("1.0", "end")
+        self.urls_text.configure(text_color=TEXT)
+        self.urls_example_active = False
+
+    def _restore_urls_example(self, _event: object | None = None) -> None:
+        if not self.urls_text.get("1.0", "end").strip():
+            self._show_urls_example()
+
+    def _clear_urls(self) -> None:
+        self._show_urls_example()
 
     def _retry_failed(self) -> None:
         if not self._save_settings(show_confirmation=False):

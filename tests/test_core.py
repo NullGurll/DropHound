@@ -5,6 +5,7 @@ from pathlib import Path
 from cyberdrop_desk.core import (
     Settings,
     clean_output,
+    download_command,
     normalize_urls,
     parse_file_progress,
     parse_supported_sites,
@@ -22,6 +23,19 @@ class NormalizeUrlsTests(unittest.TestCase):
     def test_rejects_non_web_values(self) -> None:
         with self.assertRaises(ValueError):
             normalize_urls("not-a-link")
+
+    def test_bulk_download_uses_one_url_per_line_input_file(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            config = Path(folder) / "engine-config.yaml"
+            links = ["https://example.com/first", "https://example.com/second"]
+            command = download_command(links, config)
+            batch = Path(folder) / "active-links.txt"
+
+            self.assertEqual(batch.read_text(encoding="utf-8"), "\n".join(links) + "\n")
+            self.assertIn("--input-file", command)
+            self.assertEqual(command[command.index("--input-file") + 1], str(batch))
+            self.assertNotIn(links[0], command)
+            self.assertNotIn(links[1], command)
 
 
 class ConfigTests(unittest.TestCase):

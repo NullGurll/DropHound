@@ -192,8 +192,19 @@ def engine_command() -> list[str]:
     return [sys.executable, "-m", "cyberdrop_dl"]
 
 
+def write_url_batch(urls: Iterable[str], path: Path) -> Path:
+    """Write one URL per line for Cyberdrop-DL's reliable bulk-input mode."""
+    values = [url.strip() for url in urls if url.strip()]
+    if not values:
+        raise ValueError("Paste at least one link to download.")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(values) + "\n", encoding="utf-8")
+    return path
+
+
 def download_command(urls: Iterable[str], config_path: Path) -> list[str]:
-    return [*engine_command(), "download", *urls, "--config", str(config_path)]
+    batch_path = write_url_batch(urls, config_path.with_name("active-links.txt"))
+    return [*engine_command(), "download", "--input-file", str(batch_path), "--config", str(config_path)]
 
 
 def retry_failed_command(config_path: Path) -> list[str]:

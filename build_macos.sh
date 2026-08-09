@@ -39,4 +39,4 @@ hdiutil create \
   -srcfolder "$DMG_STAGE" \
   -ov \
   -format UDZO \
-  "release/DropHound-0.6.0-macOS-${PACKAGE_ARCH:-$(uname -m)}.dmg"
+  "release/DropHound-0.6.1-macOS-${PACKAGE_ARCH:-$(uname -m)}.dmg"
