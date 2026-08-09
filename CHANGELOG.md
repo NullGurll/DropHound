@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1
+
+- Fixed bulk downloads so every pasted link is handed to the downloader through a one-link-per-line batch file.
+- Added an in-box example showing how to enter multiple links.
+- Added regression coverage for two-link batches.
+
 ## 0.6.0
 
 - Added a live `FILES  completed / discovered` counter to the Activity header.
