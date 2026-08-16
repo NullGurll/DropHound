@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.2
+
+- Added a pre-download image count for one link or a multi-link batch.
+- Added a clear `Check images` control and live discovery status.
+- Kept image scans isolated from normal downloads and download history.
+- Invalidated stale counts automatically when the pasted links change.
+
 ## 0.6.1
 
 - Fixed bulk downloads so every pasted link is handed to the downloader through a one-link-per-line batch file.

@@ -41,6 +41,7 @@ macOS, Control-click DropHound, choose **Open**, then confirm the first launch.
 ## Features
 
 - Multi-link downloads
+- Pre-download image counts for one link or a complete multi-link batch
 - Live completed/discovered file counter
 - Separate downloaded, queued, failed, and skipped file counts
 - Live download-throughput graph
@@ -89,7 +90,7 @@ The `.deb` and portable archive are written to `release`.
 ## Automated releases
 
 The GitHub Actions workflow builds and tests all three platforms. Pushing a tag
-such as `v0.6.0` publishes the generated packages as a GitHub Release.
+such as `v0.6.2` publishes the generated packages as a GitHub Release.
 
 ## Application data
 

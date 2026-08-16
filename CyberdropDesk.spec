@@ -51,8 +51,8 @@ if sys.platform == "darwin":
         icon=platform_icon,
         bundle_identifier="app.drophound.desktop",
         info_plist={
-            "CFBundleShortVersionString": "0.6.1",
-            "CFBundleVersion": "0.6.1",
+            "CFBundleShortVersionString": "0.6.2",
+            "CFBundleVersion": "0.6.2",
             "NSHighResolutionCapable": True,
         },
     )

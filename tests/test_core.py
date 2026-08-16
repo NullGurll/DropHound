@@ -6,8 +6,10 @@ from cyberdrop_desk.core import (
     Settings,
     clean_output,
     download_command,
+    image_scan_command,
     normalize_urls,
     parse_file_progress,
+    parse_image_scan_progress,
     parse_supported_sites,
     write_engine_config,
 )
@@ -76,6 +78,30 @@ class FileProgressTests(unittest.TestCase):
             parse_supported_sites('{"Zippy":{"site":"Zippy"},"archive.org":{"site":"Archive"}}'),
             ["archive.org", "Zippy"],
         )
+
+    def test_reads_image_scan_snapshot(self) -> None:
+        progress = parse_image_scan_progress(
+            '{"files":{"completed":1,"prev_completed":2,"skipped":3,"failed":0,"queued":94},'
+            '"scraping":[{"url":"https://example.com/a"}],"downloads":[{}],'
+            '"scrape_errors":{"errors":[{}]},"download_errors":{"errors":[]}}'
+        )
+        self.assertIsNotNone(progress)
+        assert progress is not None
+        self.assertEqual(progress.total, 97)
+        self.assertEqual(progress.scraping, 1)
+        self.assertEqual(progress.downloading, 1)
+        self.assertEqual(progress.errors, 1)
+
+    def test_image_scan_is_image_only_and_throttled(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            config = Path(folder) / "scan-config.yaml"
+            command = image_scan_command(["https://example.com/album"], config)
+            self.assertIn("--images", command)
+            self.assertIn("--no-videos", command)
+            self.assertIn("--no-audio", command)
+            self.assertIn("--no-non-media", command)
+            self.assertEqual(command[command.index("--speed-limit") + 1], "1B")
+            self.assertTrue((Path(folder) / "scan-links.txt").is_file())
 
 
 if __name__ == "__main__":
