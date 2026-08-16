@@ -1,4 +1,4 @@
-# DropHound
+# DropHound — Bulk Image & Gallery Downloader
 
 <img src="assets/drophound-icon.png" alt="DropHound logo" width="120">
 
