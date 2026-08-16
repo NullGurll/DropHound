@@ -4,6 +4,7 @@ import os
 import queue
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import tkinter as tk
@@ -24,8 +25,10 @@ from cyberdrop_desk.core import (
     app_data_dir,
     clean_output,
     download_command,
+    image_scan_command,
     normalize_urls,
     parse_file_progress,
+    parse_image_scan_progress,
     parse_supported_sites,
     process_startup_kwargs,
     retry_failed_command,
@@ -158,6 +161,8 @@ class DropHound(ctk.CTk):
         self.history = HistoryStore(self.data_dir / "history.json")
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
         self.process: subprocess.Popen[str] | None = None
+        self.scan_process: subprocess.Popen[str] | None = None
+        self.scan_id = 0
         self.started_at = ""
         self.active_url_count = 0
         self.cancel_requested = False
@@ -313,10 +318,33 @@ class DropHound(ctk.CTk):
         self.urls_text.grid(row=1, column=0, sticky="ew", padx=18)
         self.urls_text.bind("<FocusIn>", self._clear_urls_example)
         self.urls_text.bind("<FocusOut>", self._restore_urls_example)
+        self.urls_text.bind("<KeyRelease>", self._links_changed, add="+")
         self._show_urls_example()
 
+        scan_row = ctk.CTkFrame(input_card, fg_color="transparent")
+        scan_row.grid(row=2, column=0, sticky="ew", padx=18, pady=(10, 0))
+        scan_row.grid_columnconfigure(0, weight=1)
+        self.image_count_label = ctk.CTkLabel(
+            scan_row,
+            text="Check how many images these links contain before downloading.",
+            text_color=MUTED,
+            font=ctk.CTkFont(size=11),
+        )
+        self.image_count_label.grid(row=0, column=0, sticky="w")
+        self.scan_button = ctk.CTkButton(
+            scan_row,
+            text="Check images",
+            width=112,
+            height=34,
+            corner_radius=9,
+            fg_color=SURFACE_2,
+            hover_color=BORDER,
+            command=self._start_image_scan,
+        )
+        self.scan_button.grid(row=0, column=1, sticky="e")
+
         destination = ctk.CTkFrame(input_card, fg_color="transparent")
-        destination.grid(row=2, column=0, sticky="ew", padx=18, pady=14)
+        destination.grid(row=3, column=0, sticky="ew", padx=18, pady=14)
         destination.grid_columnconfigure(0, weight=1)
         self.download_folder_var = ctk.StringVar()
         self.folder_entry = ctk.CTkEntry(
@@ -880,7 +908,122 @@ class DropHound(ctk.CTk):
         except FileNotFoundError as error:
             messagebox.showerror("Downloader missing", str(error), parent=self)
             return
+        if self.scan_process is not None and self.scan_process.poll() is None:
+            self.scan_id += 1
+            self.scan_process.terminate()
+            self.scan_process = None
         self._launch(command, len(urls), "Starting download…")
+
+    def _start_image_scan(self) -> None:
+        if self.scan_process is not None:
+            return
+        try:
+            entered_text = "" if self.urls_example_active else self.urls_text.get("1.0", "end")
+            urls = normalize_urls(entered_text)
+            if not urls:
+                raise ValueError("Paste at least one link to check.")
+            settings = self._collect_settings()
+        except (ValueError, OSError) as error:
+            messagebox.showerror("Check the links", str(error), parent=self)
+            return
+
+        self.scan_id += 1
+        active_scan_id = self.scan_id
+        self.scan_button.configure(state="disabled", text="Checking…")
+        self.image_count_label.configure(
+            text=f"Checking {len(urls):,} {'link' if len(urls) == 1 else 'links'} for images…",
+            text_color=ACCENT,
+        )
+        threading.Thread(
+            target=self._image_scan_worker,
+            args=(active_scan_id, urls, settings),
+            daemon=True,
+        ).start()
+
+    def _image_scan_worker(self, active_scan_id: int, urls: list[str], settings: Settings) -> None:
+        try:
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(prefix="image-scan-", dir=self.data_dir) as folder:
+                scan_dir = Path(folder)
+                scan_settings = Settings(
+                    download_folder=str(scan_dir / "discarded-files"),
+                    cookies_path=settings.cookies_path,
+                    images=True,
+                    videos=False,
+                    audio=False,
+                    other=False,
+                    deep_scrape=settings.deep_scrape,
+                    ignore_history=True,
+                    concurrent_downloads=1,
+                    per_domain=1,
+                )
+                config_path = scan_dir / "scan-config.yaml"
+                write_engine_config(scan_settings, config_path)
+                command = image_scan_command(urls, config_path)
+                environment = os.environ.copy()
+                environment["CDL_APPDATA_FOLDER"] = str(scan_dir / "engine-data")
+                environment["CDL_WRITE_JSON_UI"] = "1"
+                process = subprocess.Popen(
+                    command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    bufsize=1,
+                    env=environment,
+                    **process_startup_kwargs(),
+                )
+                self.events.put(("scan_process", (active_scan_id, process)))
+                latest_total = 0
+                latest_errors = 0
+                last_change = time.monotonic()
+                started = last_change
+                assert process.stdout is not None
+                for raw_line in process.stdout:
+                    progress = parse_image_scan_progress(clean_output(raw_line))
+                    if progress is None:
+                        continue
+                    if progress.total != latest_total or progress.errors != latest_errors:
+                        latest_total = progress.total
+                        latest_errors = progress.errors
+                        last_change = time.monotonic()
+                        self.events.put(("scan_progress", (active_scan_id, latest_total)))
+                    now = time.monotonic()
+                    stable = now - last_change >= 6
+                    idle = progress.scraping == 0
+                    if idle and stable:
+                        process.terminate()
+                        process.wait(timeout=5)
+                        self.events.put(
+                            ("scan_done", (active_scan_id, len(urls), latest_total, latest_errors))
+                        )
+                        return
+                    if now - started >= 180:
+                        process.terminate()
+                        process.wait(timeout=5)
+                        raise TimeoutError("The image check took too long. Try checking fewer links at once.")
+                exit_code = process.wait()
+                if exit_code == 0:
+                    self.events.put(("scan_done", (active_scan_id, len(urls), latest_total, latest_errors)))
+                else:
+                    raise RuntimeError("The image check could not finish for these links.")
+        except Exception as error:
+            self.events.put(("scan_error", (active_scan_id, str(error))))
+
+    def _links_changed(self, _event: object | None = None) -> None:
+        if self.urls_example_active:
+            return
+        self.scan_id += 1
+        if self.scan_process is not None and self.scan_process.poll() is None:
+            self.scan_process.terminate()
+        self.scan_process = None
+        if self.process is None:
+            self.scan_button.configure(state="normal", text="Check images")
+        self.image_count_label.configure(
+            text="Links changed — check again to refresh the image count.",
+            text_color=MUTED,
+        )
 
     def _show_urls_example(self) -> None:
         self.urls_text.delete("1.0", "end")
@@ -901,6 +1044,7 @@ class DropHound(ctk.CTk):
 
     def _clear_urls(self) -> None:
         self._show_urls_example()
+        self._links_changed()
 
     def _retry_failed(self) -> None:
         if not self._save_settings(show_confirmation=False):
@@ -988,6 +1132,37 @@ class DropHound(ctk.CTk):
                     self.run_status.configure(text=str(value)[:80], text_color=MUTED)
                 elif event == "file_progress":
                     self._apply_file_progress(value)
+                elif event == "scan_process":
+                    active_scan_id, process = value  # type: ignore[misc]
+                    if active_scan_id == self.scan_id:
+                        self.scan_process = process
+                    else:
+                        process.terminate()
+                elif event == "scan_progress":
+                    active_scan_id, total = value  # type: ignore[misc]
+                    if active_scan_id == self.scan_id:
+                        self.image_count_label.configure(
+                            text=f"Found {int(total):,} images so far…",
+                            text_color=ACCENT,
+                        )
+                elif event == "scan_done":
+                    active_scan_id, link_count, total, errors = value  # type: ignore[misc]
+                    if active_scan_id == self.scan_id:
+                        self.scan_process = None
+                        noun = "image" if int(total) == 1 else "images"
+                        link_noun = "link" if int(link_count) == 1 else "links"
+                        suffix = f" · {int(errors)} scan warning(s)" if int(errors) else ""
+                        self.image_count_label.configure(
+                            text=f"{int(link_count):,} {link_noun} · {int(total):,} {noun} found{suffix}",
+                            text_color=SUCCESS if not int(errors) else MUTED,
+                        )
+                        self.scan_button.configure(state="normal", text="Check again")
+                elif event == "scan_error":
+                    active_scan_id, error = value  # type: ignore[misc]
+                    if active_scan_id == self.scan_id:
+                        self.scan_process = None
+                        self.image_count_label.configure(text=str(error), text_color=DANGER)
+                        self.scan_button.configure(state="normal", text="Try again")
                 elif event == "supported_sites":
                     self._show_supported_sites(value)
                 elif event == "supported_sites_error":
@@ -1120,6 +1295,7 @@ class DropHound(ctk.CTk):
         state = "disabled" if running else "normal"
         self.download_button.configure(state=state)
         self.retry_button.configure(state=state)
+        self.scan_button.configure(state=state if self.scan_process is None else "disabled")
         self.cancel_button.configure(state="normal" if running else "disabled")
         self.core_status.configure(text="●  Working" if running else "●  Ready", text_color=ACCENT if running else SUCCESS)
         if running:
@@ -1194,6 +1370,8 @@ class DropHound(ctk.CTk):
             ):
                 return
             self._cancel()
+        if self.scan_process is not None and self.scan_process.poll() is None:
+            self.scan_process.terminate()
         self.telemetry_stop.set()
         self.destroy()
 

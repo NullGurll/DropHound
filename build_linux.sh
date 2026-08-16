@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 ARCH="${RUNNER_ARCH:-$(uname -m)}"
-VERSION="0.6.1"
+VERSION="0.6.2"
 
 if [[ ! -d .venv ]]; then
   "$PYTHON_BIN" -m venv .venv

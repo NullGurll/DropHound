@@ -81,6 +81,14 @@ class FileProgress:
     previously_downloaded: int
 
 
+@dataclass(frozen=True)
+class ImageScanProgress:
+    total: int
+    scraping: int
+    downloading: int
+    errors: int
+
+
 def parse_file_progress(line: str) -> FileProgress | None:
     """Read Cyberdrop-DL's structured UI snapshot without depending on display text."""
     try:
@@ -103,6 +111,30 @@ def parse_file_progress(line: str) -> FileProgress | None:
         skipped=skipped,
         failed=failed,
         previously_downloaded=previously_downloaded,
+    )
+
+
+def parse_image_scan_progress(line: str) -> ImageScanProgress | None:
+    """Read the image-discovery state from Cyberdrop-DL's structured UI."""
+    try:
+        payload = json.loads(line)
+        files = payload["files"]
+        total = sum(
+            max(0, int(files.get(name, 0)))
+            for name in ("completed", "prev_completed", "failed", "queued")
+        )
+        scraping = len(payload.get("scraping", ()))
+        downloading = len(payload.get("downloads", ()))
+        scrape_errors = payload.get("scrape_errors", {}).get("errors", ())
+        download_errors = payload.get("download_errors", {}).get("errors", ())
+        errors = len(scrape_errors) + len(download_errors)
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError, AttributeError):
+        return None
+    return ImageScanProgress(
+        total=total,
+        scraping=scraping,
+        downloading=downloading,
+        errors=errors,
     )
 
 
@@ -205,6 +237,25 @@ def write_url_batch(urls: Iterable[str], path: Path) -> Path:
 def download_command(urls: Iterable[str], config_path: Path) -> list[str]:
     batch_path = write_url_batch(urls, config_path.with_name("active-links.txt"))
     return [*engine_command(), "download", "--input-file", str(batch_path), "--config", str(config_path)]
+
+
+def image_scan_command(urls: Iterable[str], config_path: Path) -> list[str]:
+    """Discover images with an isolated, deliberately throttled engine run."""
+    batch_path = write_url_batch(urls, config_path.with_name("scan-links.txt"))
+    return [
+        *engine_command(),
+        "download",
+        "--input-file",
+        str(batch_path),
+        "--config",
+        str(config_path),
+        "--images",
+        "--no-videos",
+        "--no-audio",
+        "--no-non-media",
+        "--speed-limit",
+        "1B",
+    ]
 
 
 def retry_failed_command(config_path: Path) -> list[str]:
